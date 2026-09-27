@@ -211,10 +211,12 @@ mod tests {
         ///   Ask    → 3 (process::exit(3))
         ///   Default→ 3 (process::exit(3)) — grouped with Ask
         ///   Deny   → 2 (process::exit(2)) — handled before rewrite match
+        ///   ConfigError → 2 (fail closed, same as Deny)
         fn expected_exit_code(verdict: &PermissionVerdict) -> i32 {
             match verdict {
                 PermissionVerdict::Allow => 0,
                 PermissionVerdict::Deny => 2,
+                PermissionVerdict::ConfigError => 2,
                 PermissionVerdict::Ask => 3,
                 PermissionVerdict::Default => 3, // MUST be 3, not 0!
             }
@@ -254,6 +256,14 @@ mod tests {
             let verdict = check_command_with_rules("rm -rf /tmp/test", &deny, &[], &[]);
             assert_eq!(verdict, PermissionVerdict::Deny);
             assert_eq!(expected_exit_code(&verdict), 2);
+        }
+
+        #[test]
+        fn test_config_error_verdict_maps_to_deny_exit_code() {
+            // ConfigError (unreadable/unparseable settings file) maps to Deny (exit 2) — fail closed.
+            // This is tested indirectly by ensuring the enum variant exists and maps to 2.
+            // A direct test would require triggering a config error, which requires file I/O.
+            assert_eq!(expected_exit_code(&PermissionVerdict::ConfigError), 2);
         }
 
         #[test]

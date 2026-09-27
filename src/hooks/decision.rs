@@ -420,7 +420,7 @@ mod tests {
             check_command_for("git status", Host::Codex),
             PermissionVerdict::Default
         );
-        let (deny, ask, allow) = super::super::permissions::load_rules_for(Host::Codex);
+        let (deny, ask, allow, _config_error) = super::super::permissions::load_rules_for(Host::Codex);
         assert!(deny.is_empty() && ask.is_empty() && allow.is_empty());
     }
 
