@@ -1199,8 +1199,8 @@ mod emit_guarded_tests {
 
     #[test]
     fn test_emit_guarded_empty_filtered_with_hint_no_leading_blank() {
-        // Use a long raw so that never_worse prefers the hint (fewer tokens than raw)
-        let long_raw = "x".repeat(200);
+        // Use a long raw matching the repro (600 newlines) so never_worse prefers the hint
+        let long_raw = "x".repeat(600);
         let result = emit_guarded(
             "",
             Some("[full output: ~/.cache/rtk/tee/1_uv.log]"),
@@ -1214,10 +1214,10 @@ mod emit_guarded_tests {
         assert_eq!(result, "[full output: ~/.cache/rtk/tee/1_uv.log]");
     }
 
-    #[test]
+#[test]
     fn test_emit_guarded_non_empty_filtered_with_hint_has_separator() {
-        // Use a long raw so that never_worse prefers the filtered+body (fewer tokens than raw)
-        let long_raw = "x".repeat(200);
+        // Use a long raw matching the repro so never_worse prefers the filtered+body
+        let long_raw = "x".repeat(600);
         let result = emit_guarded("body content", Some("[hint]"), &long_raw);
         assert!(
             result.starts_with("body content"),
