@@ -1199,8 +1199,16 @@ mod emit_guarded_tests {
 
     #[test]
     fn test_emit_guarded_empty_filtered_with_hint_no_leading_blank() {
-        let result = emit_guarded("", Some("[full output: ~/.cache/rtk/tee/1_uv.log]"), "raw raw raw");
-        assert!(!result.starts_with('\n'), "should not start with blank line: {:?}", result);
+        let result = emit_guarded(
+            "",
+            Some("[full output: ~/.cache/rtk/tee/1_uv.log]"),
+            "raw raw raw",
+        );
+        assert!(
+            !result.starts_with('\n'),
+            "should not start with blank line: {:?}",
+            result
+        );
         assert_eq!(result, "[full output: ~/.cache/rtk/tee/1_uv.log]");
     }
 
