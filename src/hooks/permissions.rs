@@ -19,6 +19,8 @@ pub enum PermissionVerdict {
     Ask,
     /// No rule matched — default to ask (matches Claude Code's least-privilege default).
     Default,
+    /// A settings file exists but could not be read or parsed — fail closed.
+    ConfigError,
 }
 
 /// Check `cmd` against Claude Code's deny/ask/allow permission rules.
@@ -43,7 +45,10 @@ pub enum Host {
 }
 
 pub fn check_command_for(cmd: &str, host: Host) -> PermissionVerdict {
-    let (deny_rules, ask_rules, allow_rules) = load_rules_for(host);
+    let (deny_rules, ask_rules, allow_rules, config_error) = load_rules_for(host);
+    if config_error {
+        return PermissionVerdict::ConfigError;
+    }
     check_command_with_rules(cmd, &deny_rules, &ask_rules, &allow_rules)
 }
 
@@ -53,17 +58,29 @@ pub fn check_command_for(cmd: &str, host: Host) -> PermissionVerdict {
 /// can load once up front and reuse `check_command_with_rules` per command instead
 /// of going through `check_command_for` and re-reading every settings file from
 /// disk on every single call.
-pub(crate) fn load_rules_for(host: Host) -> (Vec<String>, Vec<String>, Vec<String>) {
+pub(crate) fn load_rules_for(host: Host) -> (Vec<String>, Vec<String>, Vec<String>, bool) {
     match host {
-        Host::Claude => load_permission_rules(),
-        Host::Cursor => load_cursor_rules(),
-        Host::Gemini => load_gemini_rules(),
-        Host::Droid => load_droid_rules(),
+        Host::Claude => {
+            let (deny, ask, allow, config_error) = load_permission_rules();
+            (deny, ask, allow, config_error)
+        }
+        Host::Cursor => {
+            let (deny, ask, allow) = load_cursor_rules();
+            (deny, ask, allow, false)
+        }
+        Host::Gemini => {
+            let (deny, ask, allow) = load_gemini_rules();
+            (deny, ask, allow, false)
+        }
+        Host::Droid => {
+            let (deny, ask, allow) = load_droid_rules();
+            (deny, ask, allow, false)
+        }
         // Hosts with no RTK-side rule source. Codex enforces its native
         // execution rules after updatedInput. Do not interpret these hosts'
         // rules as Claude Bash patterns or borrow another host's settings.
         // No RTK-side match means Default, not an explicit Allow.
-        Host::Codex | Host::Trae | Host::Vibe => (Vec::new(), Vec::new(), Vec::new()),
+        Host::Codex | Host::Trae | Host::Vibe => (Vec::new(), Vec::new(), Vec::new(), false),
     }
 }
 
@@ -146,22 +163,39 @@ pub(crate) fn check_command_with_rules(
 /// 3. `~/.claude/settings.json`
 /// 4. `~/.claude/settings.local.json`
 ///
-/// Missing files and malformed JSON are silently skipped.
-fn load_permission_rules() -> (Vec<String>, Vec<String>, Vec<String>) {
+/// If any settings file exists but cannot be read or parsed, returns config_error=true
+/// to trigger fail-closed behavior (ConfigError verdict).
+fn load_permission_rules() -> (Vec<String>, Vec<String>, Vec<String>, bool) {
     let mut deny_rules = Vec::new();
     let mut ask_rules = Vec::new();
     let mut allow_rules = Vec::new();
+    let mut config_error = false;
 
     for path in get_settings_paths() {
-        let Ok(content) = std::fs::read_to_string(&path) else {
+        if !path.exists() {
             continue;
+        }
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!(
+                    "[rtk] error: failed to read permissions from {}",
+                    path.display()
+                );
+                config_error = true;
+                continue;
+            }
         };
-        let Ok(json) = crate::core::utils::from_json_str::<Value>(&content) else {
-            eprintln!(
-                "[rtk] warning: failed to parse permissions from {}",
-                path.display()
-            );
-            continue;
+        let json = match crate::core::utils::from_json_str::<Value>(&content) {
+            Ok(j) => j,
+            Err(_) => {
+                eprintln!(
+                    "[rtk] error: failed to parse permissions from {}",
+                    path.display()
+                );
+                config_error = true;
+                continue;
+            }
         };
         let Some(permissions) = json.get("permissions") else {
             continue;
@@ -172,7 +206,7 @@ fn load_permission_rules() -> (Vec<String>, Vec<String>, Vec<String>) {
         append_bash_rules(permissions.get("allow"), &mut allow_rules);
     }
 
-    (deny_rules, ask_rules, allow_rules)
+    (deny_rules, ask_rules, allow_rules, config_error)
 }
 
 /// Extract Bash-scoped patterns from a JSON array and append them to `target`.

@@ -79,7 +79,8 @@ pub(crate) fn decide_with_params(
     excluded: &[String],
     transparent_prefixes: &[String],
 ) -> HookDecision {
-    if verdict == PermissionVerdict::Deny {
+    // ConfigError means a settings file exists but couldn't be read/parsed — fail closed.
+    if verdict == PermissionVerdict::ConfigError || verdict == PermissionVerdict::Deny {
         return HookDecision::Deny;
     }
 
