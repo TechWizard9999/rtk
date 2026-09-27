@@ -1218,11 +1218,7 @@ mod emit_guarded_tests {
     fn test_emit_guarded_non_empty_filtered_with_hint_has_separator() {
         // Use a long raw so that never_worse prefers the filtered+body (fewer tokens than raw)
         let long_raw = "x".repeat(200);
-        let result = emit_guarded(
-            "body content",
-            Some("[hint]"),
-            &long_raw,
-        );
+        let result = emit_guarded("body content", Some("[hint]"), &long_raw);
         assert!(
             result.starts_with("body content"),
             "should start with body: {:?}",
