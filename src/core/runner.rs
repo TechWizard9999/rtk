@@ -1211,8 +1211,16 @@ mod emit_guarded_tests {
             Some("[hint]"),
             "raw raw raw raw raw raw raw",
         );
-        assert!(result.starts_with("body content"), "should start with body: {:?}", result);
-        assert!(result.contains("\n[hint]"), "should have separator: {:?}", result);
+        assert!(
+            result.starts_with("body content"),
+            "should start with body: {:?}",
+            result
+        );
+        assert!(
+            result.contains("\n[hint]"),
+            "should have separator: {:?}",
+            result
+        );
     }
 
     #[test]
