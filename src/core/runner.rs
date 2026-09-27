@@ -1214,7 +1214,7 @@ mod emit_guarded_tests {
         assert_eq!(result, "[full output: ~/.cache/rtk/tee/1_uv.log]");
     }
 
-#[test]
+    #[test]
     fn test_emit_guarded_non_empty_filtered_with_hint_has_separator() {
         // Use a long raw matching the repro so never_worse prefers the filtered+body
         let long_raw = "x".repeat(600);
