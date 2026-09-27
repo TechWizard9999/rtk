@@ -1206,7 +1206,11 @@ mod emit_guarded_tests {
 
     #[test]
     fn test_emit_guarded_non_empty_filtered_with_hint_has_separator() {
-        let result = emit_guarded("body content", Some("[hint]"), "raw raw raw raw raw raw raw");
+        let result = emit_guarded(
+            "body content",
+            Some("[hint]"),
+            "raw raw raw raw raw raw raw",
+        );
         assert!(result.starts_with("body content"), "should start with body: {:?}", result);
         assert!(result.contains("\n[hint]"), "should have separator: {:?}", result);
     }
