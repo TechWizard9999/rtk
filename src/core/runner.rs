@@ -1234,7 +1234,6 @@ mod emit_guarded_tests {
             result
         );
     }
-    }
 
     #[test]
     fn test_emit_guarded_no_hint_returns_filtered() {
