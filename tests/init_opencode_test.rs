@@ -1,6 +1,10 @@
+// This test requires a real $HOME and Unix-like environment for OpenCode plugin paths.
+// On Windows, OpenCode plugin paths differ and the test would need different setup.
+#[cfg(unix)]
 use std::path::Path;
 use std::process::{Command, Output};
 
+#[cfg(unix)]
 use tempfile::TempDir;
 
 fn run_rtk(home: &Path, args: &[&str]) -> Output {
@@ -22,10 +26,11 @@ fn output_text(output: &Output) -> String {
     )
 }
 
+#[cfg(unix)]
 #[test]
 fn opencode_global_install_also_registers_claude_hook() {
     let home = TempDir::new().expect("create temporary home");
-    std::fs::create_dir_all(home.path().join(".claude")).expect("create Claude config directory");
+    // The code now creates the .claude directory automatically
 
     let additive = run_rtk(home.path(), &["init", "-g", "--opencode", "--auto-patch"]);
     assert!(
