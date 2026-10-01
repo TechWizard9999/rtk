@@ -290,6 +290,7 @@ fn read_head_lines(file: &Path, n: usize) -> Result<Vec<u8>> {
 
 /// `file`'s size on disk, and `None` for anything whose size says nothing about how much it
 /// will produce -- a device node, a FIFO, a socket.
+#[allow(dead_code)]
 fn regular_file_len(file: &Path) -> Option<usize> {
     let meta = fs::metadata(file).ok()?;
     meta.is_file().then_some(meta.len() as usize)
