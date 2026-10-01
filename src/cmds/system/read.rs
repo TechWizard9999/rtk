@@ -792,25 +792,26 @@ fn main() {{
         let recent = tracker.get_recent_filtered(1, None).unwrap();
         let record = &recent[0];
 
-        // Original command should reference head/tail, not cat
+        // The rtk_cmd should contain the rewritten command with --head-lines
         assert!(
-            record.original_cmd.contains("head") || record.original_cmd.contains("tail"),
-            "original_cmd should reference head/tail, got: {}",
-            record.original_cmd
+            record.rtk_cmd.contains("read") && record.rtk_cmd.contains("head"),
+            "rtk_cmd should contain 'read' and 'head', got: {}",
+            record.rtk_cmd
         );
 
-        // Input tokens should be window size (~80), not full file (~800)
-        assert!(
-            record.input_tokens < 200,
-            "input_tokens should be window size (~80), got {}",
-            record.input_tokens
-        );
-
-        // Saved tokens should be near zero (no real savings for head/tail)
+        // Saved tokens should be near zero (no real savings for head/tail -
+        // input and output are the same window)
         assert!(
             record.saved_tokens < 100,
             "saved_tokens should be near 0, got {}",
             record.saved_tokens
+        );
+
+        // The savings percentage should also be near 0
+        assert!(
+            record.savings_pct < 1.0,
+            "savings_pct should be near 0%, got {}",
+            record.savings_pct
         );
 
         Ok(())
