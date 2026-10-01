@@ -3028,3 +3028,18 @@ mod tests {
         );
     }
 }
+
+#[test]
+fn test_categorize_uv_as_python() {
+    // Every row uv_cmd.rs writes (`rtk uv sync`, `rtk uv run …`, `rtk uv
+    // pip …`) must land in the python bucket, not `other` — the same uv
+    // invocation already counts as python when it enters through `rtk
+    // pip`'s uv fallback (#4316).
+    for cmd in [
+        "rtk uv sync",
+        "rtk uv run python -c 'print(1)'",
+        "rtk uv pip install ruff",
+    ] {
+        assert_eq!(categorize_command(cmd), "python", "{cmd}");
+    }
+}
