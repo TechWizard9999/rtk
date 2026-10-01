@@ -290,7 +290,6 @@ fn read_head_lines(file: &Path, n: usize) -> Result<Vec<u8>> {
 
 /// `file`'s size on disk, and `None` for anything whose size says nothing about how much it
 /// will produce -- a device node, a FIFO, a socket.
-#[expect(dead_code)]
 fn regular_file_len(file: &Path) -> Option<usize> {
     let meta = fs::metadata(file).ok()?;
     meta.is_file().then_some(meta.len() as usize)
@@ -356,10 +355,9 @@ mod tests {
     use super::*;
     use crate::core::filter::FilterLevel;
     use crate::core::tracking::Tracker;
-    use crate::hooks::init::InitContext;
     use std::fs;
     use std::io::Write;
-    use tempfile::TempDir;
+    use tempfile::{NamedTempFile, TempDir};
 
     /// `read_head_lines` must agree with `head_window` byte-for-byte on every shape, since it
     /// replaces it on the unfiltered path -- CRLF endings and an unterminated last line
@@ -783,10 +781,6 @@ fn main() {{
         let tracker = Tracker::new_in_memory()?;
 
         // Test --head-lines 5
-        let ctx = InitContext {
-            dry_run: false,
-            ..Default::default()
-        };
         run(&file, FilterLevel::None, None, Some(5), None, false, 0).unwrap();
 
         // Verify tracking recorded head baseline, not cat
