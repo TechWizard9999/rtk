@@ -17,6 +17,7 @@ use crate::core::utils::resolved_command;
 use anyhow::{Context, Result};
 use std::borrow::Cow;
 use std::io::{IsTerminal, Write};
+#[allow(unused_imports)]
 use std::process::Stdio;
 
 const MAX_RESPONSE_SIZE: usize = 500;
