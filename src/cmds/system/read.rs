@@ -354,11 +354,12 @@ fn byte_line_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::filter::FilterLevel;
     use crate::core::tracking::Tracker;
     use crate::hooks::init::InitContext;
     use std::fs;
     use std::io::Write;
-    use tempfile::{NamedTempFile, TempDir};
+    use tempfile::TempDir;
 
     /// `read_head_lines` must agree with `head_window` byte-for-byte on every shape, since it
     /// replaces it on the unfiltered path -- CRLF endings and an unterminated last line
