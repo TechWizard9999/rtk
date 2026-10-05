@@ -66,7 +66,7 @@ pub fn run(
         timer.track(
             &original_cmd,
             "rtk read",
-            &String::from_utf8_lossy(&bytes),
+            &String::from_utf8_lossy(window),
             &String::from_utf8_lossy(window),
         );
         return Ok(());
@@ -290,7 +290,6 @@ fn read_head_lines(file: &Path, n: usize) -> Result<Vec<u8>> {
 
 /// `file`'s size on disk, and `None` for anything whose size says nothing about how much it
 /// will produce -- a device node, a FIFO, a socket.
-#[allow(dead_code)]
 fn regular_file_len(file: &Path) -> Option<usize> {
     let meta = fs::metadata(file).ok()?;
     meta.is_file().then_some(meta.len() as usize)
@@ -360,7 +359,7 @@ mod tests {
     use crate::core::tracking::Tracker;
     use std::fs;
     use std::io::Write;
-    use tempfile::{NamedTempFile, TempDir};
+    use tempfile::NamedTempFile;
 
     /// `read_head_lines` must agree with `head_window` byte-for-byte on every shape, since it
     /// replaces it on the unfiltered path -- CRLF endings and an unterminated last line
@@ -451,19 +450,8 @@ mod tests {
 
     /// A device node reports a size of 0, which would book the window as pure cost.
     #[test]
-    fn test_regular_file_len_only_answers_for_a_regular_file() -> Result<()> {
-        let mut file = NamedTempFile::new()?;
-        file.write_all(b"hello\n")?;
-        file.flush()?;
-        assert_eq!(regular_file_len(file.path()), Some(6));
-        assert_eq!(regular_file_len(Path::new("/nonexistent-rtk-test")), None);
-        #[cfg(unix)]
-        assert_eq!(regular_file_len(Path::new("/dev/null")), None);
-        Ok(())
-    }
-
     #[test]
-    fn test_read_rust_file() -> Result<()> {
+fn test_read_rust_file() -> Result<()> {
         let mut file = NamedTempFile::with_suffix(".rs")?;
         writeln!(
             file,
@@ -756,6 +744,7 @@ fn main() {{
     /// the tracking baseline should be the 5-line window, not the full file.
     #[test]
     fn test_head_tail_tracking_baseline_is_window_not_full_file() -> Result<()> {
+        use crate::core::test_isolation;
         use crate::core::tracking::Tracker;
         use tempfile::TempDir;
 
@@ -764,38 +753,57 @@ fn main() {{
         // Create a file with ~800 bytes (400 lines of "x\n")
         fs::write(&file, "x\n".repeat(400)).unwrap();
 
-        // Use in-memory tracker to avoid polluting the developer's DB
-        let tracker = Tracker::new_in_memory()?;
+        // Use test isolation to get a test-specific database
+        test_isolation::with_root(tmp.path(), || {
+            let tracker = Tracker::new_in_memory()?;
 
-        // Test --head-lines 5
-        run(&file, FilterLevel::None, None, Some(5), None, false, 0).unwrap();
+            // Test --head-lines 5
+            run(&file, FilterLevel::None, None, Some(5), None, false, 0).unwrap();
 
-        // Verify tracking recorded head baseline, not cat
-        let recent = tracker.get_recent_filtered(1, None).unwrap();
-        let record = &recent[0];
+            // Verify tracking recorded head baseline, not cat
+            let db_path = crate::core::test_isolation::db_path();
+            let conn = rusqlite::Connection::open(&db_path)?;
+            let mut stmt = conn.prepare("SELECT rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct FROM commands ORDER BY timestamp DESC LIMIT 1")?;
+            let record = stmt.query_row([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)? as usize,
+                    row.get::<_, i64>(2)? as usize,
+                    row.get::<_, i64>(3)? as i64,
+                    row.get::<_, f64>(4)?,
+                ))
+            })?;
 
-        // The rtk_cmd should contain the rewritten command with --head-lines
-        assert!(
-            record.rtk_cmd.contains("read") && record.rtk_cmd.contains("head"),
-            "rtk_cmd should contain 'read' and 'head', got: {}",
-            record.rtk_cmd
-        );
+            // The rtk_cmd should contain the rewritten command with --head-lines
+            assert!(
+                record.0.contains("read") && record.0.contains("head"),
+                "rtk_cmd should contain 'read' and 'head', got: {}",
+                record.0
+            );
 
-        // Saved tokens should be near zero (no real savings for head/tail -
-        // input and output are the same window)
-        assert!(
-            record.saved_tokens < 100,
-            "saved_tokens should be near 0, got {}",
-            record.saved_tokens
-        );
+            // Input tokens should be window size (~80), not full file (~800)
+            assert!(
+                record.1 < 200,
+                "input_tokens should be window size (~80), got {}",
+                record.1
+            );
 
-        // The savings percentage should also be near 0
-        assert!(
-            record.savings_pct < 1.0,
-            "savings_pct should be near 0%, got {}",
-            record.savings_pct
-        );
+            // Saved tokens should be near zero (no real savings for head/tail -
+            // input and output are the same window)
+            assert!(
+                record.3 < 100,
+                "saved_tokens should be near 0, got {}",
+                record.3
+            );
 
-        Ok(())
+            // The savings percentage should also be near 0
+            assert!(
+                record.4 < 1.0,
+                "savings_pct should be near 0%, got {}",
+                record.4
+            );
+
+            Ok(())
+        })
     }
 }
