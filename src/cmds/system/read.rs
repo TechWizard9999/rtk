@@ -48,7 +48,7 @@ pub fn run(
     // Read file content
     let bytes =
         fs::read(file).with_context(|| format!("Failed to read file: {}", file.display()))?;
-    if level == FilterLevel::None
+if level == FilterLevel::None
         && !line_numbers
         && let Some(window) = byte_line_window(&bytes, head_lines, tail_lines)
     {
@@ -132,7 +132,19 @@ pub fn run(
     } else {
         format!("cat {}", file.display())
     };
-    timer.track(&original_cmd, "rtk read", &raw, shown);
+    let (input_for_tracking, output_for_tracking) = if let Some(window) = byte_line_window(
+        raw.as_bytes(),
+        head_lines,
+        tail_lines,
+    ) {
+        (
+            &String::from_utf8_lossy(window),
+            &String::from_utf8_lossy(window),
+        )
+    } else {
+        (&raw, shown)
+    };
+    timer.track(&original_cmd, "rtk read", input_for_tracking, output_for_tracking);
     Ok(())
 }
 
@@ -353,13 +365,15 @@ fn byte_line_window(
 #[cfg(test)]
 #[allow(unused_imports)]
 mod tests {
+    mod tests {
     use super::*;
     use crate::core::filter::FilterLevel;
     use crate::core::test_isolation;
     use crate::core::tracking::Tracker;
+    use rusqlite;
     use std::fs;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
     /// `read_head_lines` must agree with `head_window` byte-for-byte on every shape, since it
     /// replaces it on the unfiltered path -- CRLF endings and an unterminated last line
