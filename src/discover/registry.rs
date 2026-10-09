@@ -556,6 +556,42 @@ fn rewrite_tail_lines(cmd: &str) -> Option<String> {
     None
 }
 
+/// True if `cmd` is a grep invocation with recursive traversal flags.
+/// Handles combined short flags (`-rn`), long flags, and `-d recurse` spellings.
+/// Anything after `--` is a pattern/path, never a flag.
+fn is_recursive_grep(cmd: &str) -> bool {
+    // Flag tokens never contain spaces, so plain whitespace splitting suffices
+    // (this matches how `rewrite_segment` itself reads the base command).
+    let words: Vec<&str> = cmd.split_whitespace().collect();
+    // First word is the program; flags start after it.
+    let mut i = 1;
+    while i < words.len() {
+        let word = words[i];
+        if word == "--" {
+            break;
+        }
+        if word == "--recursive" || word == "--dereference-recursive" {
+            return true;
+        }
+        if word == "--directories=recurse" {
+            return true;
+        }
+        if word == "-d" {
+            // `-d` takes the next word as its value; only `recurse` traverses.
+            if words.get(i + 1).is_some_and(|next| *next == "recurse") {
+                return true;
+            }
+        } else if let Some(cluster) = word.strip_prefix('-') {
+            if !cluster.starts_with('-') && cluster.chars().any(|c| c == 'r' || c == 'R') {
+                // Short-flag cluster carrying -r/-R (`-r`, `-rn`, `-Rn`).
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 /// Rewrite a single (non-compound) command segment.
 /// Returns `Some(rewritten)` if matched (including already-RTK pass-through).
 /// Returns `None` if no match (caller uses original segment).
@@ -587,6 +623,11 @@ fn rewrite_segment(seg: &str, excluded: &[String]) -> Option<String> {
     // Use classify_command for correct ignore/prefix handling
     let rtk_equivalent = match classify_command(trimmed) {
         Classification::Supported { rtk_equivalent, .. } => {
+            // Skip rewrite for recursive grep: the shell's own grep honours
+            // .gitignore, while `rtk grep` runs OS grep verbatim (#4477).
+            if rtk_equivalent == "rtk grep" && is_recursive_grep(trimmed) {
+                return None;
+            }
             // Check if the base command is excluded from rewriting (#243)
             let base = trimmed.split_whitespace().next().unwrap_or("");
             if excluded.iter().any(|e| e == base) {
@@ -2266,5 +2307,68 @@ mod tests {
         assert_eq!(strip_git_global_opts("git --no-pager log"), "git log");
         assert_eq!(strip_git_global_opts("git status"), "git status");
         assert_eq!(strip_git_global_opts("cargo test"), "cargo test");
+    }
+
+    #[test]
+    fn is_recursive_grep_detects_all_spellings() {
+        assert!(is_recursive_grep("grep -r foo ."));
+        assert!(is_recursive_grep("grep -R foo ."));
+        assert!(is_recursive_grep("grep --recursive foo ."));
+        assert!(is_recursive_grep("grep --dereference-recursive foo ."));
+        assert!(is_recursive_grep("grep -d recurse foo ."));
+        assert!(is_recursive_grep("grep -drecurse foo ."));
+        assert!(is_recursive_grep("grep --directories=recurse foo ."));
+        // Combined short flags
+        assert!(is_recursive_grep("grep -rn foo ."));
+        assert!(is_recursive_grep("grep -Rn foo ."));
+        assert!(is_recursive_grep("grep -rA foo ."));
+        assert!(is_recursive_grep("grep -rnv foo ."));
+        // Non-recursive forms must not match
+        assert!(!is_recursive_grep("grep foo file.txt"));
+        assert!(!is_recursive_grep("grep -n foo file.txt"));
+        assert!(!is_recursive_grep("grep -l foo *.rs"));
+        assert!(!is_recursive_grep("grep -i foo src/main.rs"));
+        assert!(!is_recursive_grep("grep -v foo file.txt"));
+        assert!(!is_recursive_grep("grep -d skip foo ."));
+    }
+
+    #[test]
+    fn recursive_grep_not_rewritten() {
+        for cmd in [
+            "grep -r foo .",
+            "grep -R foo .",
+            "grep --recursive foo .",
+            "grep --dereference-recursive foo .",
+            "grep -d recurse foo .",
+            "grep -drecurse foo .",
+            "grep --directories=recurse foo .",
+            "grep -rn foo src/",
+            "grep -Rn foo .",
+            "grep -rA foo .",
+        ] {
+            assert_eq!(
+                rewrite_command(cmd, &[]),
+                None,
+                "recursive grep should not be rewritten: {cmd}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_recursive_grep_still_rewritten() {
+        for cmd in [
+            "grep foo file.txt",
+            "grep -n foo file.txt",
+            "grep -l foo *.rs",
+            "grep -i foo src/main.rs",
+            "grep -v foo file.txt",
+            "grep -c foo file.txt",
+        ] {
+            let result = rewrite_command(cmd, &[]);
+            assert!(
+                result.is_some_and(|r| r.starts_with("rtk grep")),
+                "non-recursive grep should be rewritten: {cmd}"
+            );
+        }
     }
 }
