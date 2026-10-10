@@ -3109,7 +3109,12 @@ fn run_cli() -> Result<i32> {
                 0
             }
             HookCommands::Opencode { agent, args } => {
-                hooks::hook_cmd::run_opencode(&args.join(" "), agent.as_deref())?;
+                let bin_path = std::env::current_exe().ok();
+                hooks::hook_cmd::run_opencode(
+                    &args.join(" "),
+                    agent.as_deref(),
+                    bin_path.as_deref(),
+                )?;
                 0
             }
             HookCommands::Check { agent, command } => {

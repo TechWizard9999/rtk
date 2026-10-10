@@ -10,6 +10,7 @@ use super::permissions_opencode;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::io::{self, Read, Write};
+use std::path::Path;
 
 use crate::core::tracking::HookOutcome;
 use crate::core::user_dirs;
@@ -1196,15 +1197,19 @@ fn droid_response_from_decision(v: &Value, cmd: &str, decision: HookDecision) ->
 
 /// Answer OpenCode's plugin: the rewrite as JSON, or `{}` to leave the
 /// command untouched.
-pub fn run_opencode(cmd: &str, agent: Option<&str>) -> Result<()> {
-    let _ = writeln!(io::stdout(), "{}", opencode_answer_for(cmd, agent));
+pub fn run_opencode(cmd: &str, agent: Option<&str>, bin_path: Option<&Path>) -> Result<()> {
+    let _ = writeln!(
+        io::stdout(),
+        "{}",
+        opencode_answer_for(cmd, agent, bin_path)
+    );
     Ok(())
 }
 
 /// [`opencode_answer`] against the rules OpenCode resolves for `agent`.
-fn opencode_answer_for(cmd: &str, agent: Option<&str>) -> Value {
+fn opencode_answer_for(cmd: &str, agent: Option<&str>, bin_path: Option<&Path>) -> Value {
     let rules = permissions_opencode::load_opencode_rules(agent);
-    opencode_answer(cmd, &rules)
+    opencode_answer(cmd, &rules, bin_path)
 }
 
 /// Decide what the plugin should do with `cmd` under OpenCode's own rules.
@@ -1218,7 +1223,11 @@ fn opencode_answer_for(cmd: &str, agent: Option<&str>) -> Value {
 /// `{}`, trading token savings on that command for the user's own policy
 /// (#4195). An allow stays an allow, an ask stays a prompt, and a deny stays
 /// denied — RTK never blocks, lifts or silences anything.
-fn opencode_answer(cmd: &str, rules: &[permissions_opencode::Rule]) -> Value {
+fn opencode_answer(
+    cmd: &str,
+    rules: &[permissions_opencode::Rule],
+    bin_path: Option<&Path>,
+) -> Value {
     if cmd.trim().is_empty() {
         return json!({});
     }
@@ -1240,7 +1249,19 @@ fn opencode_answer(cmd: &str, rules: &[permissions_opencode::Rule]) -> Value {
     }
 
     audit_log("rewrite", cmd, &rewritten);
-    json!({ "command": rewritten })
+
+    let final_command = if let Some(bin_path) = bin_path {
+        let bin_str = bin_path.display().to_string();
+        if rewritten.starts_with("rtk ") {
+            format!("{} {}", bin_str, &rewritten[4..])
+        } else {
+            format!("{} {}", bin_str, rewritten)
+        }
+    } else {
+        rewritten
+    };
+
+    json!({ "command": final_command })
 }
 
 /// Run the Factory Droid PreToolUse hook natively.
@@ -2623,6 +2644,7 @@ mod tests {
         use super::super::opencode_answer;
         use crate::hooks::permissions_opencode::{Action, Rule};
         use serde_json::json;
+        use std::path::Path;
 
         fn rule(pattern: &str, action: Action) -> Rule {
             Rule {
@@ -2634,18 +2656,18 @@ mod tests {
 
         #[test]
         fn an_empty_command_gets_no_answer() {
-            assert_eq!(opencode_answer("   ", &[]), json!({}));
+            assert_eq!(opencode_answer("   ", &[], None), json!({}));
         }
 
         #[test]
         fn an_already_prefixed_command_gets_no_answer() {
-            assert_eq!(opencode_answer("rtk git status", &[]), json!({}));
+            assert_eq!(opencode_answer("rtk git status", &[], None), json!({}));
         }
 
         #[test]
         fn with_no_rules_the_rewrite_happens() {
             assert_eq!(
-                opencode_answer("git status", &[]),
+                opencode_answer("git status", &[], None),
                 json!({ "command": "rtk git status" })
             );
         }
@@ -2657,7 +2679,7 @@ mod tests {
             for action in [Action::Allow, Action::Ask] {
                 let rules = [rule("*", action)];
                 assert_eq!(
-                    opencode_answer("ls -la", &rules),
+                    opencode_answer("ls -la", &rules, None),
                     json!({ "command": "rtk ls -la" }),
                     "action: {action:?}"
                 );
@@ -2670,7 +2692,7 @@ mod tests {
             // allowed, its rtk form would be denied. RTK steps aside so
             // OpenCode runs the typed `git status` under the user's rule.
             let rules = [rule("*", Action::Deny), rule("git status", Action::Allow)];
-            assert_eq!(opencode_answer("git status", &rules), json!({}));
+            assert_eq!(opencode_answer("git status", &rules, None), json!({}));
         }
 
         #[test]
@@ -2680,7 +2702,7 @@ mod tests {
                 rule("npx ts-node*task-cli*", Action::Allow),
             ];
             assert_eq!(
-                opencode_answer("npx ts-node src/task-cli.ts list", &rules),
+                opencode_answer("npx ts-node src/task-cli.ts list", &rules, None),
                 json!({})
             );
         }
@@ -2690,7 +2712,10 @@ mod tests {
             // {"git push *": "ask"} — the rtk form matches no rule, so a
             // rewrite would turn the user's prompt into a silent run.
             let rules = [rule("git push *", Action::Ask)];
-            assert_eq!(opencode_answer("git push origin main", &rules), json!({}));
+            assert_eq!(
+                opencode_answer("git push origin main", &rules, None),
+                json!({})
+            );
         }
 
         #[test]
@@ -2698,7 +2723,7 @@ mod tests {
             // {"*": "allow", "git push *": "deny"} — rewriting would un-match
             // the deny rule; saying nothing keeps OpenCode's own deny intact.
             let rules = [rule("*", Action::Allow), rule("git push *", Action::Deny)];
-            assert_eq!(opencode_answer("git push --force", &rules), json!({}));
+            assert_eq!(opencode_answer("git push --force", &rules, None), json!({}));
         }
 
         #[test]
@@ -2717,12 +2742,12 @@ mod tests {
             test_isolation::with_root(&tmp.path().join("home"), || {
                 let _entered = test_isolation::enter(&project);
                 assert_eq!(
-                    super::super::opencode_answer_for("git status", Some("staged-review")),
+                    super::super::opencode_answer_for("git status", Some("staged-review"), None),
                     json!({}),
                     "the agent's deny-all must reach the verdict"
                 );
                 assert_eq!(
-                    super::super::opencode_answer_for("git status", None),
+                    super::super::opencode_answer_for("git status", None, None),
                     json!({ "command": "rtk git status" }),
                     "without the agent, no rule applies and the rewrite stands"
                 );

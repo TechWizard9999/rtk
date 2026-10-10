@@ -1,26 +1,62 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import { fileURLToPath } from "node:url"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
+import { homedir } from "node:os"
 
-// RTK OpenCode plugin — rewrites commands to use rtk for token savings.
-// Requires: an rtk with the `rtk hook opencode` subcommand (newer than
-// v0.51). An older rtk answers nothing, so commands pass through unrewritten
-// rather than breaking.
-//
-// This is a thin delegating plugin: all rewrite and permission logic lives
-// in `rtk hook opencode`, which is the single source of truth
-// (src/discover/registry.rs). It judges the command against OpenCode's own
-// permission rules and answers `{}` whenever the rewrite would change what
-// those rules decide — OpenCode evaluates the final command itself, so a
-// rewrite RTK does return never lifts a deny, silences an ask, or blocks an
-// allow. To add or change rewrite rules, edit the Rust registry — not this
-// file.
+const IS_WINDOWS = process.platform === "win32"
+const RTK_EXE = IS_WINDOWS ? "rtk.exe" : "rtk"
 
-type Answer = { command?: string }
+async function resolveRtkPath(): Promise<string | null> {
+  const candidates: string[] = []
+
+  if (process.env.RTK_BIN) {
+    candidates.push(process.env.RTK_BIN)
+  }
+
+  const home = homedir()
+  candidates.push(
+    join(home, ".cargo", "bin", RTK_EXE),
+    "/opt/homebrew/bin/rtk",
+    "/usr/local/bin/rtk",
+    "/usr/bin/rtk"
+  )
+
+  if (IS_WINDOWS) {
+    const localAppData = process.env.LOCALAPPDATA
+    const programFiles = process.env.ProgramFiles
+    const programFilesX86 = process.env["ProgramFiles(x86)"]
+    if (localAppData) candidates.push(join(localAppData, "cargo", "bin", RTK_EXE))
+    if (programFiles) candidates.push(join(programFiles, "rtk", RTK_EXE))
+    if (programFilesX86) candidates.push(join(programFilesX86, "rtk", RTK_EXE))
+  }
+
+  try {
+    const { stdout } = await $`which rtk`.quiet().nothrow()
+    const p = stdout.trim()
+    if (p) candidates.unshift(p)
+  } catch {}
+
+  for (const c of candidates) {
+    if (existsSync(c)) return c
+  }
+
+  try {
+    const importPath = fileURLToPath(import.meta.url)
+    const pluginDir = importPath.split("/").slice(0, -1).join("/")
+    const bundled = join(pluginDir, "..", "..", "..", "target", "release", RTK_EXE)
+    if (existsSync(bundled)) return bundled
+  } catch {}
+
+  return null
+}
+
+type Answer = { command?: string; bin_path?: string }
 
 export const RtkOpenCodePlugin: Plugin = async ({ $ }) => {
-  try {
-    await $`which rtk`.quiet()
-  } catch {
-    console.warn("[rtk] rtk binary not found in PATH — plugin disabled")
+  const rtkPath = await resolveRtkPath()
+  if (!rtkPath) {
+    console.warn("[rtk] rtk binary not found (checked PATH, RTK_BIN, ~/.cargo/bin, Homebrew, /usr/local/bin) — plugin disabled")
     return {}
   }
 
@@ -35,7 +71,7 @@ export const RtkOpenCodePlugin: Plugin = async ({ $ }) => {
       if (typeof command !== "string" || !command) return
 
       try {
-        const result = await $`rtk hook opencode ${command}`.quiet().nothrow()
+        const result = await $`${rtkPath} hook opencode ${command} --bin ${rtkPath}`.quiet().nothrow()
         const answer = JSON.parse(String(result.stdout).trim() || "{}") as Answer
         if (answer.command && answer.command !== command) {
           ;(args as Record<string, unknown>).command = answer.command
