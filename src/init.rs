@@ -320,6 +320,16 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
         )
     })?;
 
+    // Keep the old mode, but leave a new file at tempfile's default mode.
+    #[cfg(unix)]
+    let existing_perms = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(error).with_context(|| format!("Failed to stat {}", path.display()))
+        }
+    };
+
     // Create temp file in same directory (ensures same filesystem for atomic rename)
     let mut temp_file = NamedTempFile::new_in(parent)
         .with_context(|| format!("Failed to create temp file in {}", parent.display()))?;
@@ -328,6 +338,15 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     temp_file
         .write_all(content.as_bytes())
         .with_context(|| format!("Failed to write {} bytes to temp file", content.len()))?;
+
+    // Apply the old mode before rename so readers never observe a replacement at 0600.
+    #[cfg(unix)]
+    if let Some(perms) = existing_perms {
+        temp_file
+            .as_file()
+            .set_permissions(perms)
+            .with_context(|| format!("Failed to preserve permissions on {}", path.display()))?;
+    }
 
     // Atomic rename
     temp_file.persist(path).with_context(|| {
@@ -1760,6 +1779,50 @@ More notes
         assert!(file_path.exists());
         let written = fs::read_to_string(&file_path).unwrap();
         assert_eq!(written, content);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_atomic_write_preserves_existing_mode() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let temp = TempDir::new().unwrap();
+        let file_path = temp.path().join("test_mode.json");
+
+        // Create file with mode 0644
+        fs::write(&file_path, r#"{"old": "content"}"#).unwrap();
+        let mut perms = fs::metadata(&file_path).unwrap().permissions();
+        perms.set_mode(0o644);
+        fs::set_permissions(&file_path, perms).unwrap();
+        let original_mode = fs::metadata(&file_path).unwrap().mode() & 0o777;
+        assert_eq!(original_mode, 0o644);
+
+        // Replace content via atomic_write
+        let new_content = r#"{"new": "content"}"#;
+        atomic_write(&file_path, new_content).unwrap();
+
+        // Content should change
+        let written = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(written, new_content);
+
+        // Mode should be preserved
+        let new_mode = fs::metadata(&file_path).unwrap().mode() & 0o777;
+        assert_eq!(
+            new_mode, 0o644,
+            "atomic_write should preserve existing file mode"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_atomic_write_new_file_keeps_private_mode() {
+        use std::os::unix::fs::MetadataExt;
+        let temp = TempDir::new().unwrap();
+        let file_path = temp.path().join("new.json");
+
+        atomic_write(&file_path, "new content").unwrap();
+
+        assert_eq!(fs::read_to_string(&file_path).unwrap(), "new content");
+        assert_eq!(fs::metadata(&file_path).unwrap().mode() & 0o777, 0o600);
     }
 
     // Test for preserve_order round-trip
