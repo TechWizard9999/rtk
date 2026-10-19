@@ -47,7 +47,7 @@ pub fn truncate(s: &str, max_len: usize) -> String {
 /// ```
 pub fn strip_ansi(text: &str) -> String {
     lazy_static::lazy_static! {
-        static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+        static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;:]*[a-zA-Z]").unwrap();
     }
     ANSI_RE.replace_all(text, "").to_string()
 }
@@ -367,6 +367,12 @@ mod tests {
     fn test_strip_ansi_complex() {
         let input = "\x1b[32mGreen\x1b[0m normal \x1b[31mRed\x1b[0m";
         assert_eq!(strip_ansi(input), "Green normal Red");
+    }
+
+    #[test]
+    fn bugfix_issue_4_test_strip_ansi_colon_sgr() {
+        let input = "\x1b[38:2:255:0:0mRed\x1b[0m";
+        assert_eq!(strip_ansi(input), "Red");
     }
 
     #[test]
