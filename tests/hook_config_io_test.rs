@@ -107,6 +107,7 @@ impl HookSandbox {
         )
     }
 
+    #[cfg(unix)]
     fn gemini(&self, command: &str) -> Value {
         self.run(
             "gemini",
@@ -117,6 +118,7 @@ impl HookSandbox {
         )
     }
 
+    #[cfg(unix)]
     fn gemini_with_trust(&self, command: &str) -> Value {
         self.run_with_trust(
             "gemini",
@@ -133,10 +135,12 @@ impl HookSandbox {
         self.home.join(".cursor/cli-config.json")
     }
 
+    #[cfg(unix)]
     fn gemini_global_settings(&self) -> PathBuf {
         self.home.join(".gemini/settings.json")
     }
 
+    #[cfg(unix)]
     fn gemini_project_settings(&self) -> PathBuf {
         self.project.join(".gemini/settings.json")
     }
