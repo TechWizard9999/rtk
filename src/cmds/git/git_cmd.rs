@@ -813,7 +813,7 @@ const MIN_ABBREV_LEN: usize = 4;
 
 /// An argument that could name a blob object: `<rev>:<path>`, a bare object ID (full SHA-1 /
 /// SHA-256, or any abbreviation git accepts), or a peel that can land on a blob
-/// (`<rev>^{blob}`, `<rev>^{}`, `<rev>^{object}`).
+/// (`<rev>^{blob}`, `<rev>^{object}`, `<rev>^{}`).
 ///
 /// This is a cheap, pure pre-filter: the caller subsequently verifies candidates with
 /// `probe_is_blob` (`git cat-file -t <arg> == "blob"`).
@@ -822,10 +822,10 @@ fn is_blob_show_arg(arg: &str) -> bool {
         return false;
     }
 
-    // Peels that can resolve to a blob: `^{blob}` explicitly, `^{}` (a tag peeled to
-    // whatever it points at) and `^{object}` (any object, unpeeled). `^{commit}`,
+    // Peels that can resolve to a blob: `^{blob}` explicitly, `^{object}` (any object,
+    // unpeeled) and `^{}` (a tag peeled to whatever it points at). `^{commit}`,
     // `^{tree}` and `^{/text}` never name a blob, so they are not candidates.
-    if arg.ends_with("^{blob}") || arg.ends_with("^{}") || arg.ends_with("^{object}") {
+    if arg.ends_with("^{blob}") || arg.ends_with("^{object}") || arg.ends_with("^{}") {
         return true;
     }
 
@@ -6035,7 +6035,7 @@ mod tests {
         assert!(!is_blob_show_arg(":"));
         assert!(!is_blob_show_arg("::"));
 
-        // Bare hex object IDs (40-char SHA-1, 64-char SHA-256, abbreviated 7..=64 hex).
+        // Bare hex object IDs (40-char SHA-1, 64-char SHA-256, abbreviated 4..=64 hex).
         assert!(is_blob_show_arg("44624a8bcb26332b298c2078d0f68675aa1ed269"));
         assert!(is_blob_show_arg(
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
