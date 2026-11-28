@@ -115,12 +115,12 @@ mod tests {
     #[test]
     fn claude_hook_command_matches_case_insensitive_windows_binary() {
         for command in [
-            "C:/tools/rtk.exe hook claude",
+            r#""C:\tools\RTK.EXE" hook claude"#,
             "C:/tools/RTK.EXE hook claude",
+            "C:/tools/RTK.exe hook claude",
             "C:/tools/Rtk.exe hook claude",
             "C:/tools/rtk.EXE hook claude",
-            "C:/tools/RTK.exe hook claude",
-            r#""C:\tools\RTK.EXE" hook claude"#,
+            "C:/tools/rtk.exe hook claude",
             "RTK.EXE hook claude",
         ] {
             assert!(is_claude_hook_command(command), "{command}");
@@ -132,11 +132,11 @@ mod tests {
         assert!(!is_claude_hook_command("C:/tools/not-rtk.exe hook claude"));
     }
 
-    /// A bare `RTK` is rtk only where the file system folds case: on Windows
-    /// it matches, elsewhere it is a different binary and stays rejected.
+    /// `RTK` and `Rtk` without `.exe` match only on Windows builds; elsewhere
+    /// they may name another binary and stay rejected.
     #[test]
     fn claude_hook_command_folds_bare_rtk_stem_only_on_windows() {
-        for command in ["RTK hook claude", "C:/tools/Rtk hook claude"] {
+        for command in ["C:/tools/Rtk hook claude", "RTK hook claude"] {
             assert_eq!(is_claude_hook_command(command), cfg!(windows), "{command}");
         }
     }

@@ -2354,11 +2354,11 @@ mod tests {
     fn session_start_entry_present_matches_a_case_insensitive_rtk_binary() {
         let entry = |command: &str| serde_json::json!([{ "hooks": [{ "type": "command", "command": command }] }]);
         for command in [
-            "rtk hook claude",
-            "C:/tools/rtk.exe hook claude",
+            r#""C:\tools\RTK.EXE" hook claude"#,
             "C:/tools/RTK.EXE hook claude",
             "C:/tools/Rtk.exe hook claude",
-            r#""C:\tools\RTK.EXE" hook claude"#,
+            "C:/tools/rtk.exe hook claude",
+            "rtk hook claude",
         ] {
             let root = settings_with(serde_json::json!({
                 crate::hooks::constants::SESSION_START_KEY: entry(command)
